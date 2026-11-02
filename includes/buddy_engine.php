@@ -115,13 +115,30 @@ function buddyai_chat(array $user, array $history, string $userMsg): string
     ]);
 
     $raw      = curl_exec($ch);
+    $curlErr  = curl_error($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
 
-    if ($raw === false || $httpCode !== 200) {
-        return 'Maaf, BuddyAI sedang tidak dapat merespons saat ini. Silakan coba lagi dalam beberapa saat. 🙏';
+    // cURL-level failure (network, timeout, SSL)
+    if ($raw === false) {
+        error_log('[BuddyAI] cURL error: ' . $curlErr);
+        return 'Maaf, BuddyAI tidak dapat terhubung ke server AI. Periksa koneksi internet server. 🙏';
     }
 
     $data = json_decode($raw, true);
+
+    if ($httpCode !== 200) {
+        $apiMsg = $data['error']['message'] ?? $raw;
+        error_log('[BuddyAI] OpenAI HTTP ' . $httpCode . ': ' . $apiMsg);
+
+        // Return a user-friendly message based on the error code
+        return match ($httpCode) {
+            401 => 'Konfigurasi BuddyAI bermasalah (API key tidak valid). Silakan hubungi tim IT. 🔑',
+            429 => 'BuddyAI sedang sangat sibuk. Tunggu sebentar lalu coba lagi. ⏳',
+            500, 502, 503 => 'Layanan AI sedang mengalami gangguan. Silakan coba beberapa menit lagi. 🙏',
+            default       => 'Maaf, BuddyAI tidak dapat merespons saat ini (HTTP ' . $httpCode . '). Silakan coba lagi. 🙏',
+        };
+    }
+
     return trim($data['choices'][0]['message']['content'] ?? 'Maaf, terjadi kesalahan saat memproses respons.');
 }
